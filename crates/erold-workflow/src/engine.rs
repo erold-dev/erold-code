@@ -15,7 +15,7 @@ use crate::events::{WorkflowEvent, WorkflowEventHandler, LoggingEventHandler};
 use crate::repository::WorkflowRepository;
 use crate::security::{SecurityGate, FileTracker};
 use crate::state::{StateMachine, WorkflowState};
-use erold_api::{Task, Knowledge, CreateTask, CreateSubtask, CreateKnowledge, TaskPriority, KnowledgeCategory};
+use erold_api::{Task, Knowledge, CreateTask, CreateKnowledge, TaskPriority, KnowledgeCategory};
 
 /// Main workflow engine
 ///
@@ -125,6 +125,28 @@ impl<R: WorkflowRepository> WorkflowEngine<R> {
         // Extract keywords from task description (simple extraction for now)
         let keywords = self.extract_keywords(task_description);
 
+        // Detect topics from task description for guidelines filtering
+        let topics = self.detect_topics(task_description);
+
+        // Fetch guidelines for detected topics
+        let mut guidelines = Vec::new();
+        for topic in &topics {
+            match self.repository.fetch_guidelines_by_topic(topic).await {
+                Ok(topic_guidelines) => guidelines.extend(topic_guidelines),
+                Err(e) => {
+                    // Log but don't fail - guidelines are helpful but not critical
+                    tracing::warn!("Failed to fetch guidelines for topic '{}': {}", topic, e);
+                }
+            }
+        }
+
+        // Emit guidelines fetched event
+        self.emit_event(WorkflowEvent::GuidelinesFetched {
+            topics: topics.clone(),
+            count: guidelines.len(),
+            timestamp: Utc::now(),
+        });
+
         // Search for relevant knowledge
         let all_knowledge = self.repository
             .search_knowledge(task_description)
@@ -154,6 +176,7 @@ impl<R: WorkflowRepository> WorkflowEngine<R> {
             relevant_tasks: Vec::new(), // Could fetch related tasks here
             past_mistakes,
             keywords,
+            guidelines,
         };
 
         *self.preprocessed_context.write().await = Some(context);
@@ -720,6 +743,49 @@ impl<R: WorkflowRepository> WorkflowEngine<R> {
             .collect()
     }
 
+    /// Detect technology topics from task description for guidelines filtering
+    fn detect_topics(&self, text: &str) -> Vec<String> {
+        let text_lower = text.to_lowercase();
+        let mut topics = Vec::new();
+
+        // Frontend detection
+        if FRONTEND_KEYWORDS.iter().any(|kw| text_lower.contains(kw)) {
+            topics.push("frontend".to_string());
+        }
+
+        // Backend detection
+        if BACKEND_KEYWORDS.iter().any(|kw| text_lower.contains(kw)) {
+            topics.push("backend".to_string());
+        }
+
+        // Security detection
+        if SECURITY_KEYWORDS.iter().any(|kw| text_lower.contains(kw)) {
+            topics.push("security".to_string());
+        }
+
+        // Database detection
+        if DATABASE_KEYWORDS.iter().any(|kw| text_lower.contains(kw)) {
+            topics.push("database".to_string());
+        }
+
+        // Testing detection
+        if TESTING_KEYWORDS.iter().any(|kw| text_lower.contains(kw)) {
+            topics.push("testing".to_string());
+        }
+
+        // DevOps detection
+        if DEVOPS_KEYWORDS.iter().any(|kw| text_lower.contains(kw)) {
+            topics.push("devops".to_string());
+        }
+
+        // Default to general if no topics detected
+        if topics.is_empty() {
+            topics.push("general".to_string());
+        }
+
+        topics
+    }
+
     /// Check if knowledge is relevant to a subtask
     fn is_relevant_to_subtask(&self, knowledge: &Knowledge, subtask_title: &str) -> bool {
         let title_lower = subtask_title.to_lowercase();
@@ -749,6 +815,51 @@ const STOP_WORDS: &[&str] = &[
     "her", "was", "one", "our", "out", "has", "have", "been", "from", "this",
     "that", "with", "they", "will", "would", "there", "their", "what", "about",
     "which", "when", "make", "like", "time", "just", "know", "take", "into",
+];
+
+/// Keywords for frontend topic detection
+const FRONTEND_KEYWORDS: &[&str] = &[
+    "react", "vue", "angular", "svelte", "next.js", "nextjs", "nuxt",
+    "css", "tailwind", "scss", "sass", "html", "component", "ui", "ux",
+    "frontend", "front-end", "client-side", "browser", "dom", "jsx", "tsx",
+    "hook", "state", "redux", "zustand", "responsive", "mobile", "web app",
+];
+
+/// Keywords for backend topic detection
+const BACKEND_KEYWORDS: &[&str] = &[
+    "api", "rest", "graphql", "server", "backend", "back-end",
+    "fastapi", "express", "django", "flask", "node.js", "nodejs",
+    "endpoint", "route", "middleware", "controller", "service",
+    "microservice", "lambda", "serverless", "authentication", "auth",
+];
+
+/// Keywords for security topic detection
+const SECURITY_KEYWORDS: &[&str] = &[
+    "security", "auth", "authentication", "authorization", "oauth",
+    "jwt", "token", "encryption", "decrypt", "password", "hash",
+    "xss", "csrf", "injection", "vulnerability", "owasp", "ssl", "tls",
+    "cors", "permission", "rbac", "role", "access control", "secret",
+];
+
+/// Keywords for database topic detection
+const DATABASE_KEYWORDS: &[&str] = &[
+    "database", "sql", "nosql", "postgres", "mysql", "mongodb",
+    "redis", "query", "orm", "migration", "schema", "index",
+    "transaction", "crud", "table", "collection", "prisma", "sqlalchemy",
+];
+
+/// Keywords for testing topic detection
+const TESTING_KEYWORDS: &[&str] = &[
+    "test", "testing", "unit test", "integration", "e2e", "end-to-end",
+    "mock", "stub", "fixture", "assertion", "coverage", "jest", "pytest",
+    "vitest", "cypress", "playwright", "spec", "tdd", "bdd",
+];
+
+/// Keywords for devops topic detection
+const DEVOPS_KEYWORDS: &[&str] = &[
+    "docker", "kubernetes", "k8s", "ci/cd", "cicd", "pipeline",
+    "deploy", "deployment", "infrastructure", "terraform", "bicep",
+    "aws", "azure", "gcp", "cloud", "container", "helm", "devops",
 ];
 
 /// Builder for WorkflowEngine

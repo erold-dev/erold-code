@@ -432,3 +432,77 @@ pub struct ApiErrorResponse {
     pub code: Option<String>,
     pub details: Option<serde_json::Value>,
 }
+
+// =============================================================================
+// Guideline Models (from erold.dev/api/v1/guidelines)
+// =============================================================================
+
+/// Guideline priority level
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GuidelinePriority {
+    Critical,
+    Recommended,
+    Optional,
+}
+
+/// Guideline confidence level
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GuidelineConfidence {
+    Established,
+    Emerging,
+    Experimental,
+}
+
+/// AI metadata for a guideline
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct GuidelineAI {
+    /// The core rule, under 280 chars
+    pub prompt_snippet: String,
+    /// When should this guideline be applied
+    #[serde(default)]
+    pub applies_when: Vec<String>,
+    /// When should this guideline be skipped
+    #[serde(default)]
+    pub does_not_apply_when: Vec<String>,
+    /// Priority level
+    pub priority: GuidelinePriority,
+    /// Confidence level
+    pub confidence: GuidelineConfidence,
+}
+
+/// A coding guideline from erold.dev
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Guideline {
+    /// Unique identifier (e.g., "frontend/react/component-structure")
+    pub id: String,
+    /// Guideline title
+    pub title: String,
+    /// URL-friendly slug
+    pub slug: String,
+    /// Topic (e.g., "frontend", "backend", "security")
+    pub topic: String,
+    /// Category within topic (e.g., "react", "fastapi")
+    pub category: String,
+    /// Brief description
+    pub description: Option<String>,
+    /// Full markdown content
+    pub content: Option<String>,
+    /// AI-specific metadata
+    pub ai: Option<GuidelineAI>,
+    /// Tags for filtering
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Version
+    pub version: Option<String>,
+}
+
+/// Guidelines API response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GuidelinesResponse {
+    pub guidelines: Vec<Guideline>,
+    pub total: Option<usize>,
+}

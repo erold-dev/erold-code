@@ -4,7 +4,7 @@
 //! Enables testing with mock implementations.
 
 use async_trait::async_trait;
-use erold_api::{Knowledge, Task, CreateKnowledge, CreateTask, UpdateTask, UpdateKnowledge};
+use erold_api::{Knowledge, Task, CreateKnowledge, CreateTask, UpdateTask, UpdateKnowledge, Guideline, GuidelinesFilter};
 use crate::error::Result;
 
 /// Repository trait for workflow data access
@@ -55,21 +55,37 @@ pub trait WorkflowRepository: Send + Sync {
 
     /// Block a task
     async fn block_task(&self, id: &str, reason: &str) -> Result<Task>;
+
+    // =========================================================================
+    // Guidelines Operations
+    // =========================================================================
+
+    /// Fetch coding guidelines from erold.dev
+    async fn fetch_guidelines(&self, filter: Option<GuidelinesFilter>) -> Result<Vec<Guideline>>;
+
+    /// Fetch guidelines by topic (e.g., "frontend", "backend", "security")
+    async fn fetch_guidelines_by_topic(&self, topic: &str) -> Result<Vec<Guideline>>;
 }
 
 /// Live implementation using Erold API client
 pub struct LiveWorkflowRepository {
     client: erold_api::EroldClient,
+    guidelines_client: erold_api::GuidelinesClient,
     project_id: String,
 }
 
 impl LiveWorkflowRepository {
     /// Create a new live repository
-    pub fn new(client: erold_api::EroldClient, project_id: impl Into<String>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    /// Returns error if guidelines client creation fails
+    pub fn new(client: erold_api::EroldClient, project_id: impl Into<String>) -> Result<Self> {
+        let guidelines_client = erold_api::GuidelinesClient::new()?;
+        Ok(Self {
             client,
+            guidelines_client,
             project_id: project_id.into(),
-        }
+        })
     }
 
     /// Get the project ID
@@ -145,6 +161,16 @@ impl WorkflowRepository for LiveWorkflowRepository {
     async fn block_task(&self, id: &str, reason: &str) -> Result<Task> {
         let blocked = self.client.block_task(id, reason).await?;
         Ok(blocked)
+    }
+
+    async fn fetch_guidelines(&self, filter: Option<GuidelinesFilter>) -> Result<Vec<Guideline>> {
+        let guidelines = self.guidelines_client.fetch(filter).await?;
+        Ok(guidelines)
+    }
+
+    async fn fetch_guidelines_by_topic(&self, topic: &str) -> Result<Vec<Guideline>> {
+        let guidelines = self.guidelines_client.fetch_by_topic(topic).await?;
+        Ok(guidelines)
     }
 }
 
@@ -400,6 +426,16 @@ pub mod testing {
                     task_id: id.to_string(),
                 })
             }
+        }
+
+        async fn fetch_guidelines(&self, _filter: Option<GuidelinesFilter>) -> Result<Vec<Guideline>> {
+            // Return empty guidelines for testing
+            // Tests can mock specific guidelines if needed
+            Ok(Vec::new())
+        }
+
+        async fn fetch_guidelines_by_topic(&self, _topic: &str) -> Result<Vec<Guideline>> {
+            Ok(Vec::new())
         }
     }
 }
