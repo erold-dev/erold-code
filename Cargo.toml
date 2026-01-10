@@ -1,0 +1,101 @@
+[package]
+name = "erold"
+description = "A learning development agent"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "erold"
+path = "src/main.rs"
+
+[dependencies]
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+serde_json.workspace = true
+
+erold-api.workspace = true
+erold-config.workspace = true
+erold-workflow.workspace = true
+erold-tools.workspace = true
+erold-llm.workspace = true
+erold-web.workspace = true
+erold-tui.workspace = true
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/erold-api",
+    "crates/erold-config",
+    "crates/erold-workflow",
+    "crates/erold-tools",
+    "crates/erold-llm",
+    "crates/erold-web",
+    "crates/erold-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Erold Team"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Logging/tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# URL encoding
+urlencoding = "2.1"
+
+# Async traits
+async-trait = "0.1"
+
+# Config
+toml = "0.8"
+directories = "5.0"
+
+# Internal crates
+erold-api = { path = "crates/erold-api" }
+erold-config = { path = "crates/erold-config" }
+erold-workflow = { path = "crates/erold-workflow" }
+erold-tools = { path = "crates/erold-tools" }
+erold-llm = { path = "crates/erold-llm" }
+erold-web = { path = "crates/erold-web" }
+erold-tui = { path = "crates/erold-tui" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
