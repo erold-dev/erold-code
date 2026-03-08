@@ -10,7 +10,7 @@ mod agent;
 mod ui;
 
 use clap::{Parser, Subcommand};
-use erold_api::{EroldClient, Project};
+use erold_api::{EroldClient, EroldV2Client, Project};
 use erold_config::{ConfigLoader, Credentials, ProjectLink};
 use std::io::{self, Write};
 use tracing::info;
@@ -62,6 +62,65 @@ enum Commands {
 
     /// Unlink current directory from project
     Unlink,
+
+    // === V2 Context Engine Commands ===
+
+    /// Fetch and display project context
+    Context,
+
+    /// Search knowledge fragments
+    Search {
+        /// Search query
+        query: String,
+    },
+
+    /// Log an event as a fragment
+    Log {
+        /// Event content
+        content: String,
+
+        /// Fragment type (observation, decision, error, file_change, session_summary)
+        #[arg(long, short = 't', default_value = "observation")]
+        r#type: String,
+
+        /// Associate with an intent
+        #[arg(long)]
+        intent: Option<String>,
+    },
+
+    /// Manage intents (goals/objectives)
+    Intent {
+        #[command(subcommand)]
+        action: IntentAction,
+    },
+
+    /// Local Smart Strip compression demo
+    Compress {
+        /// File to compress
+        file: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum IntentAction {
+    /// Create a new intent
+    Create {
+        /// Intent title
+        title: String,
+    },
+
+    /// List active intents
+    List,
+
+    /// Complete an intent
+    Complete {
+        /// Intent ID
+        id: String,
+
+        /// Completion summary
+        #[arg(long, short)]
+        summary: String,
+    },
 }
 
 fn print_banner() {
@@ -485,6 +544,244 @@ async fn cmd_interactive(auto_approve: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+// =============================================================================
+// V2 Context Engine Commands
+// =============================================================================
+
+/// Create a V2 client from credentials and project link
+fn make_v2_client(creds: &Credentials) -> anyhow::Result<EroldV2Client> {
+    let config = ConfigLoader::load()?;
+    let client = EroldV2Client::new(&config.api.url, &creds.erold_api_key, &creds.tenant_id)?;
+    Ok(client)
+}
+
+async fn cmd_context() -> anyhow::Result<()> {
+    let (creds, link) = ensure_setup().await?;
+    let client = make_v2_client(&creds)?;
+
+    print!("Fetching context for {}... ", link.project_name);
+    io::stdout().flush()?;
+
+    let ctx = client.get_context(&link.project_id).await?;
+    println!("OK\n");
+
+    // Project info
+    println!("Project:");
+    if let Some(name) = ctx.project.get("title").and_then(|v| v.as_str()) {
+        println!("  Name: {name}");
+    }
+    if let Some(status) = ctx.project.get("status").and_then(|v| v.as_str()) {
+        println!("  Status: {status}");
+    }
+
+    // Tech info
+    if let Some(tech) = &ctx.tech_info {
+        println!("\nTech Info:");
+        if let Some(stack) = tech.get("stack").and_then(|v| v.as_str()) {
+            println!("  Stack: {stack}");
+        }
+        if let Some(notes) = tech.get("notes").and_then(|v| v.as_str()) {
+            println!("  Notes: {notes}");
+        }
+    }
+
+    // Active intents
+    if !ctx.active_intents.is_empty() {
+        println!("\nActive Intents:");
+        for intent in &ctx.active_intents {
+            println!("  [{:8}] {} ({} fragments)", intent.id, intent.title, intent.fragment_count);
+        }
+    } else {
+        println!("\nNo active intents.");
+    }
+
+    // Recent fragments
+    if !ctx.recent_fragments.is_empty() {
+        println!("\nRecent Fragments:");
+        for frag in &ctx.recent_fragments {
+            let preview = if frag.content.len() > 80 {
+                format!("{}...", &frag.content[..80])
+            } else {
+                frag.content.clone()
+            };
+            println!("  [{}] ({}) {}", frag.fragment_type, frag.created_at, preview);
+        }
+    } else {
+        println!("\nNo recent fragments.");
+    }
+
+    Ok(())
+}
+
+async fn cmd_search(query: &str) -> anyhow::Result<()> {
+    let (creds, link) = ensure_setup().await?;
+    let client = make_v2_client(&creds)?;
+
+    print!("Searching for \"{query}\"... ");
+    io::stdout().flush()?;
+
+    let fragments = client.search_fragments(&link.project_id, query).await?;
+    println!("OK ({} results)\n", fragments.len());
+
+    if fragments.is_empty() {
+        println!("No fragments found.");
+        return Ok(());
+    }
+
+    for frag in &fragments {
+        println!("--- [{} | {}] ---", frag.fragment_type, frag.created_at);
+        if let Some(ref intent_id) = frag.intent_id {
+            println!("  Intent: {intent_id}");
+        }
+        if !frag.tags.is_empty() {
+            println!("  Tags: {}", frag.tags.join(", "));
+        }
+        println!("  {}", frag.content);
+        println!();
+    }
+
+    Ok(())
+}
+
+async fn cmd_log(content: &str, event_type: &str, intent_id: Option<&str>) -> anyhow::Result<()> {
+    let (creds, link) = ensure_setup().await?;
+    let client = make_v2_client(&creds)?;
+
+    print!("Logging {event_type} event... ");
+    io::stdout().flush()?;
+
+    client
+        .log_event(&link.project_id, content, event_type, intent_id)
+        .await?;
+
+    println!("OK");
+    Ok(())
+}
+
+async fn cmd_intent_create(title: &str) -> anyhow::Result<()> {
+    let (creds, link) = ensure_setup().await?;
+    let client = make_v2_client(&creds)?;
+
+    print!("Creating intent... ");
+    io::stdout().flush()?;
+
+    let intent = client.create_intent(&link.project_id, title).await?;
+    println!("OK\n");
+
+    println!("Intent created:");
+    println!("  ID: {}", intent.id);
+    println!("  Title: {}", intent.title);
+    println!("  Status: {}", intent.status);
+
+    Ok(())
+}
+
+async fn cmd_intent_list() -> anyhow::Result<()> {
+    let (creds, link) = ensure_setup().await?;
+    let client = make_v2_client(&creds)?;
+
+    print!("Fetching intents... ");
+    io::stdout().flush()?;
+
+    let intents = client.list_intents(&link.project_id, Some("active")).await?;
+    println!("OK ({} active)\n", intents.len());
+
+    if intents.is_empty() {
+        println!("No active intents.");
+        return Ok(());
+    }
+
+    println!("{:<12} {:<40} {:<8} {}", "ID", "TITLE", "STATUS", "FRAGMENTS");
+    println!("{}", "-".repeat(70));
+    for intent in &intents {
+        let title = if intent.title.len() > 38 {
+            format!("{}...", &intent.title[..35])
+        } else {
+            intent.title.clone()
+        };
+        println!("{:<12} {:<40} {:<8} {}", intent.id, title, intent.status, intent.fragment_count);
+    }
+
+    Ok(())
+}
+
+async fn cmd_intent_complete(id: &str, summary: &str) -> anyhow::Result<()> {
+    let (creds, link) = ensure_setup().await?;
+    let client = make_v2_client(&creds)?;
+
+    print!("Completing intent {id}... ");
+    io::stdout().flush()?;
+
+    let intent = client
+        .complete_intent(&link.project_id, id, summary)
+        .await?;
+    println!("OK\n");
+
+    println!("Intent completed:");
+    println!("  ID: {}", intent.id);
+    println!("  Title: {}", intent.title);
+    println!("  Status: {}", intent.status);
+    if let Some(ref s) = intent.summary {
+        println!("  Summary: {s}");
+    }
+
+    Ok(())
+}
+
+fn cmd_compress(file: &str) -> anyhow::Result<()> {
+    let path = std::path::Path::new(file);
+    if !path.exists() {
+        anyhow::bail!("File not found: {file}");
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    let original_len = content.len();
+
+    // Simple Smart Strip demo: remove blank lines, trim whitespace, collapse runs of whitespace
+    let compressed: Vec<String> = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            // Collapse multiple spaces into one
+            let mut result = String::with_capacity(line.len());
+            let mut prev_space = false;
+            for ch in line.chars() {
+                if ch.is_whitespace() {
+                    if !prev_space {
+                        result.push(' ');
+                    }
+                    prev_space = true;
+                } else {
+                    result.push(ch);
+                    prev_space = false;
+                }
+            }
+            result
+        })
+        .collect();
+
+    let compressed_text = compressed.join("\n");
+    let compressed_len = compressed_text.len();
+
+    #[allow(clippy::cast_precision_loss)]
+    let ratio = if original_len > 0 {
+        compressed_len as f64 / original_len as f64
+    } else {
+        1.0
+    };
+
+    println!("Smart Strip Compression Demo");
+    println!("============================\n");
+    println!("Input:  {} ({} bytes)", file, original_len);
+    println!("Output: {} bytes", compressed_len);
+    println!("Ratio:  {:.1}%\n", ratio * 100.0);
+    println!("--- Compressed Output ---");
+    println!("{compressed_text}");
+
+    Ok(())
+}
+
 fn cmd_unlink() -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let erold_dir = cwd.join(".erold");
@@ -527,6 +824,21 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Config) => cmd_config(),
         Some(Commands::Run { task, yes }) => cmd_run(&task, yes || cli.auto_approve).await,
         Some(Commands::Unlink) => cmd_unlink(),
+        Some(Commands::Context) => cmd_context().await,
+        Some(Commands::Search { query }) => cmd_search(&query).await,
+        Some(Commands::Log {
+            content,
+            r#type,
+            intent,
+        }) => cmd_log(&content, &r#type, intent.as_deref()).await,
+        Some(Commands::Intent { action }) => match action {
+            IntentAction::Create { title } => cmd_intent_create(&title).await,
+            IntentAction::List => cmd_intent_list().await,
+            IntentAction::Complete { id, summary } => {
+                cmd_intent_complete(&id, &summary).await
+            }
+        },
+        Some(Commands::Compress { file }) => cmd_compress(&file),
         None => cmd_interactive(cli.auto_approve).await,
     }
 }

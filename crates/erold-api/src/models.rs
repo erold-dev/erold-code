@@ -506,3 +506,69 @@ pub struct GuidelinesResponse {
     pub guidelines: Vec<Guideline>,
     pub total: Option<usize>,
 }
+
+// =============================================================================
+// V2 Context Engine Models
+// =============================================================================
+
+/// A compressed knowledge fragment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Fragment {
+    pub id: String,
+    pub content: String,
+    #[serde(rename = "type")]
+    pub fragment_type: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub intent_id: Option<String>,
+    pub compression_ratio: f64,
+    pub created_at: String,
+}
+
+/// An intent (goal/objective being tracked)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Intent {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub summary: Option<String>,
+    pub fragment_count: u32,
+    pub created_at: String,
+}
+
+/// V2 context response combining project info, intents, and fragments
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextV2Response {
+    pub project: serde_json::Value,
+    pub tech_info: Option<serde_json::Value>,
+    pub active_intents: Vec<Intent>,
+    pub recent_fragments: Vec<Fragment>,
+}
+
+/// Request to log an event as a fragment
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogEventRequest {
+    pub content: String,
+    #[serde(rename = "type")]
+    pub event_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intent_id: Option<String>,
+}
+
+/// Request to create a new intent
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateIntentRequest {
+    pub title: String,
+}
+
+/// Request to complete an intent
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompleteIntentRequest {
+    pub summary: String,
+}
