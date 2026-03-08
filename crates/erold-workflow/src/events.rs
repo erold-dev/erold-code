@@ -35,6 +35,13 @@ pub enum WorkflowEvent {
         timestamp: DateTime<Utc>,
     },
 
+    /// Guidelines fetched from erold.dev
+    GuidelinesFetched {
+        topics: Vec<String>,
+        count: usize,
+        timestamp: DateTime<Utc>,
+    },
+
     /// Knowledge refreshed from internet
     KnowledgeRefreshed {
         knowledge_id: String,
@@ -139,6 +146,7 @@ impl WorkflowEvent {
             | Self::StateChanged { timestamp, .. }
             | Self::PreprocessingStarted { timestamp, .. }
             | Self::KnowledgeFetched { timestamp, .. }
+            | Self::GuidelinesFetched { timestamp, .. }
             | Self::KnowledgeRefreshed { timestamp, .. }
             | Self::PlanCreated { timestamp, .. }
             | Self::AwaitingApproval { timestamp, .. }
@@ -164,6 +172,7 @@ impl WorkflowEvent {
             Self::StateChanged { .. } => "workflow.state_changed",
             Self::PreprocessingStarted { .. } => "workflow.preprocessing_started",
             Self::KnowledgeFetched { .. } => "workflow.knowledge_fetched",
+            Self::GuidelinesFetched { .. } => "workflow.guidelines_fetched",
             Self::KnowledgeRefreshed { .. } => "workflow.knowledge_refreshed",
             Self::PlanCreated { .. } => "workflow.plan_created",
             Self::AwaitingApproval { .. } => "workflow.awaiting_approval",
@@ -205,6 +214,14 @@ impl fmt::Display for WorkflowEvent {
                     f,
                     "Knowledge fetched: {} total, {} relevant, {} expired",
                     total_count, relevant_count, expired_count
+                )
+            }
+            Self::GuidelinesFetched { topics, count, .. } => {
+                write!(
+                    f,
+                    "Guidelines fetched: {} guidelines for topics [{}]",
+                    count,
+                    topics.join(", ")
                 )
             }
             Self::KnowledgeRefreshed { knowledge_id, .. } => {

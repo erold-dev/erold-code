@@ -2,7 +2,7 @@
 //!
 //! Immutable context objects passed between phases.
 
-use erold_api::{Knowledge, Task, Decision};
+use erold_api::{Knowledge, Task, Decision, Guideline};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -17,6 +17,8 @@ pub struct PreprocessedContext {
     pub past_mistakes: Vec<Knowledge>,
     /// Extracted keywords for the task
     pub keywords: Vec<String>,
+    /// Coding guidelines from erold.dev
+    pub guidelines: Vec<Guideline>,
 }
 
 impl PreprocessedContext {
@@ -38,10 +40,22 @@ impl PreprocessedContext {
         !self.past_mistakes.is_empty()
     }
 
+    /// Check if there are guidelines available
+    #[must_use]
+    pub fn has_guidelines(&self) -> bool {
+        !self.guidelines.is_empty()
+    }
+
     /// Get total knowledge count
     #[must_use]
     pub fn knowledge_count(&self) -> usize {
         self.relevant_knowledge.len() + self.past_mistakes.len()
+    }
+
+    /// Get guidelines count
+    #[must_use]
+    pub fn guidelines_count(&self) -> usize {
+        self.guidelines.len()
     }
 }
 
@@ -58,6 +72,8 @@ pub struct SubtaskContext {
     pub relevant_knowledge: Vec<Knowledge>,
     /// Past mistakes relevant to this subtask
     pub past_mistakes: Vec<Knowledge>,
+    /// Coding guidelines relevant to this subtask
+    pub guidelines: Vec<Guideline>,
     /// IDs of knowledge used (for tracking)
     pub knowledge_used_ids: Vec<String>,
 }
@@ -72,6 +88,7 @@ impl SubtaskContext {
             keywords: Vec::new(),
             relevant_knowledge: Vec::new(),
             past_mistakes: Vec::new(),
+            guidelines: Vec::new(),
             knowledge_used_ids: Vec::new(),
         }
     }
@@ -85,6 +102,26 @@ impl SubtaskContext {
     #[must_use]
     pub fn build_prompt_additions(&self) -> String {
         let mut additions = String::new();
+
+        // Add coding guidelines (highest priority - these are rules to follow)
+        if !self.guidelines.is_empty() {
+            additions.push_str("\n📋 CODING GUIDELINES (MUST FOLLOW):\n");
+            for guideline in &self.guidelines {
+                // Use AI metadata if available for concise prompt
+                if let Some(ref ai) = guideline.ai {
+                    additions.push_str(&format!(
+                        "- [{}] **{}**: {}\n",
+                        format!("{:?}", ai.priority).to_uppercase(),
+                        guideline.title,
+                        ai.prompt_snippet
+                    ));
+                } else if let Some(ref desc) = guideline.description {
+                    additions.push_str(&format!("- **{}**: {}\n", guideline.title, desc));
+                } else {
+                    additions.push_str(&format!("- **{}**\n", guideline.title));
+                }
+            }
+        }
 
         // Add warnings about past mistakes
         if !self.past_mistakes.is_empty() {

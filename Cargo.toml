@@ -24,7 +24,6 @@ erold-config.workspace = true
 erold-workflow.workspace = true
 erold-tools.workspace = true
 erold-llm.workspace = true
-erold-web.workspace = true
 erold-tui.workspace = true
 
 [workspace]
@@ -35,7 +34,6 @@ members = [
     "crates/erold-workflow",
     "crates/erold-tools",
     "crates/erold-llm",
-    "crates/erold-web",
     "crates/erold-tui",
 ]
 
@@ -90,7 +88,6 @@ erold-config = { path = "crates/erold-config" }
 erold-workflow = { path = "crates/erold-workflow" }
 erold-tools = { path = "crates/erold-tools" }
 erold-llm = { path = "crates/erold-llm" }
-erold-web = { path = "crates/erold-web" }
 erold-tui = { path = "crates/erold-tui" }
 
 [workspace.lints.rust]

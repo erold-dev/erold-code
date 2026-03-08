@@ -89,7 +89,7 @@ impl Agent<LiveWorkflowRepository> {
         let repository = Arc::new(LiveWorkflowRepository::new(
             api_client,
             project_id.to_string(),
-        ));
+        )?);
 
         // Create workflow config (security settings are always on by default)
         let workflow_config = WorkflowConfig::builder()
